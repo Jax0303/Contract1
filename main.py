@@ -57,12 +57,13 @@ def verify_token(token: str = Depends(oauth2_scheme)):
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-# 스포일러 및 금지된 키워드 탐지 함수
-def check_text_for_keywords(text: str, keywords: List[str]) -> bool:
-    return any(keyword in text for keyword in keywords)
-
-# AI 기반 스포일러 탐지 함수
-def ai_spoiler_detection(broadcast_content: str, contract_conditions: dict):
+# AI 및 키워드 기반 방송 내용 분석 함수
+def analyze_broadcast(broadcast_content: str, contract_conditions: dict, keywords: List[str]):
+    """
+    방송 내용을 분석하여 금지된 키워드나 스포일러 여부를 탐지.
+    AI 기반 분석과 키워드 탐지를 모두 처리.
+    """
+    # AI 기반 스포일러 탐지
     prompt = f"""
     방송 내용이 아래의 계약 조건을 위반했는지 분석해 주세요.
     계약서 조건: {contract_conditions}
@@ -70,12 +71,17 @@ def ai_spoiler_detection(broadcast_content: str, contract_conditions: dict):
     금지된 키워드, 스포일러, 수익화 여부 등을 분석해 주세요.
     """
     logging.info("AI 기반으로 방송 내용을 분석 중입니다.")
-    response = openai.Completion.create(
+    ai_response = openai.Completion.create(
         engine="gpt-4",
         prompt=prompt,
         max_tokens=500
     )
-    return response.choices[0].text
+    ai_analysis = ai_response.choices[0].text
+
+    # 금지된 키워드 탐지
+    keyword_violations = [kw for kw in keywords if kw in broadcast_content]
+
+    return {"AI 분석 결과": ai_analysis, "금지된 키워드 위반": keyword_violations}
 
 # 방송 길이 검사 함수
 def check_broadcast_length(메타정보: dict, 계약서: Contract):
@@ -116,11 +122,12 @@ def check_contract(broadcast: BroadcastCheck, token: str = Depends(verify_token)
     if 길이_위반:
         violations.append(길이_위반)
 
-    # 방송 내용 검사 (AI 기반 분석)
+    # 방송 내용 검사 (모듈화된 AI 및 키워드 기반 분석)
     방송내용 = "이 방송에서는 스포일러와 수익화 내용이 포함되었습니다."
-    ai_analysis = ai_spoiler_detection(방송내용, 계약서.dict())
+    analysis_results = analyze_broadcast(방송내용, 계약서.dict(), 계약서.금지_키워드)
 
-    if 계약서.스포일러_금지 and check_text_for_keywords(방송내용, 계약서.금지_키워드):
+    # 스포일러 위반 여부 확인
+    if 계약서.스포일러_금지 and analysis_results["금지된 키워드 위반"]:
         violations.append("위반: 스포일러 또는 금지된 키워드 포함")
 
     # 처리 시간 계산 및 로그 기록
@@ -130,6 +137,6 @@ def check_contract(broadcast: BroadcastCheck, token: str = Depends(verify_token)
 
     # 위반 사항 반환
     if violations:
-        return {"결과": violations, "AI 분석 결과": ai_analysis}
+        return {"결과": violations, "AI 분석 결과": analysis_results["AI 분석 결과"]}
     else:
-        return {"결과": "위반 사항 없음", "AI 분석 결과": ai_analysis}
+        return {"결과": "위반 사항 없음", "AI 분석 결과": analysis_results["AI 분석 결과"]}
