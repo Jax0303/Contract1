@@ -1,11 +1,13 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Form
 from pydantic import BaseModel, field_validator
 from typing import List
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 import logging
 from jose import JWTError, jwt
 import openai
 import time
+import requests
+from datetime import timedelta, datetime
 
 # OpenAI API 키 설정 (AI 기반 스포일러 탐지를 위해 필요)
 openai.api_key = "YOUR_OPENAI_API_KEY"
@@ -13,6 +15,8 @@ openai.api_key = "YOUR_OPENAI_API_KEY"
 # JWT 설정(사용자 인증을 위해 필요)
 SECRET_KEY = "your-secret-key"
 ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 # FastAPI 앱 생성
@@ -20,6 +24,19 @@ app = FastAPI()
 
 # 로깅 설정(처리 결과 및 속도 표시)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+
+# JWT 토큰 생성 함수
+def create_access_token(data: dict, expires_delta: timedelta = None):
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=15)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
 
 # 계약서의 기본 구조 정의
 class Contract(BaseModel):
@@ -30,6 +47,7 @@ class Contract(BaseModel):
     수익화_허용: bool
     BGM_사용_금지: bool
     폭력적_콘텐츠_금지: bool
+
 
 # 방송 정보 정의
 class BroadcastCheck(BaseModel):
@@ -44,6 +62,7 @@ class BroadcastCheck(BaseModel):
             raise ValueError(f'{field.name}는 영숫자로만 구성되어야 합니다.')
         return value
 
+
 # JWT 검증 함수 (토큰 만료 처리 포함)
 def verify_token(token: str = Depends(oauth2_scheme)):
     try:
@@ -56,6 +75,28 @@ def verify_token(token: str = Depends(oauth2_scheme)):
         return username
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
+
+
+# IPFS에 데이터를 저장하는 함수
+def store_data_on_ipfs(data: dict):
+    """
+    계약서 검증 결과 데이터를 IPFS에 저장하고, 해시값을 반환.
+    """
+    try:
+        ipfs_api_url = "http://localhost:5001/api/v0/add"  # 로컬 IPFS 노드
+        files = {'file': ('result.json', str(data))}
+
+        response = requests.post(ipfs_api_url, files=files)
+        response.raise_for_status()
+
+        # IPFS 해시 반환
+        ipfs_hash = response.json()["Hash"]
+        logging.info(f"데이터가 IPFS에 저장되었습니다. 해시: {ipfs_hash}")
+        return ipfs_hash
+    except requests.exceptions.RequestException as e:
+        logging.error(f"IPFS 저장 실패: {e}")
+        return None
+
 
 # AI 및 키워드 기반 방송 내용 분석 함수
 def analyze_broadcast(broadcast_content: str, contract_conditions: dict, keywords: List[str]):
@@ -83,6 +124,7 @@ def analyze_broadcast(broadcast_content: str, contract_conditions: dict, keyword
 
     return {"AI 분석 결과": ai_analysis, "금지된 키워드 위반": keyword_violations}
 
+
 # 방송 길이 검사 함수
 def check_broadcast_length(메타정보: dict, 계약서: Contract):
     if 메타정보["영상길이"] < 계약서.최소_방송_길이:
@@ -92,6 +134,7 @@ def check_broadcast_length(메타정보: dict, 계약서: Contract):
         logging.warning(f"방송 {메타정보['방송ID']}: 최대 방송 길이를 초과함.")
         return f"위반: 최대 방송 길이 {계약서.최대_방송_길이}분보다 김."
     return None
+
 
 # 계약서 조건을 불러오는 함수 (예시로 하드코딩된 계약서 조건)
 def get_game_contract(게임ID: str) -> Contract:
@@ -105,6 +148,21 @@ def get_game_contract(게임ID: str) -> Contract:
         BGM_사용_금지=True,
         폭력적_콘텐츠_금지=True
     )
+
+
+# JWT 토큰 발급 API 경로
+@app.post("/token")
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    # 예시 사용자 인증 (하드코딩된 사용자 정보)
+    if form_data.username != "user" or form_data.password != "password":
+        raise HTTPException(status_code=401, detail="사용자 이름 또는 비밀번호가 잘못되었습니다.")
+
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": form_data.username}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
 
 # 방송 검사 API 경로
 @app.post("/check_contract")
@@ -135,8 +193,78 @@ def check_contract(broadcast: BroadcastCheck, token: str = Depends(verify_token)
     processing_time = end_time - start_time
     logging.info(f"계약 조건 확인 완료. 처리 시간: {processing_time} 초")
 
-    # 위반 사항 반환
-    if violations:
-        return {"결과": violations, "AI 분석 결과": analysis_results["AI 분석 결과"]}
-    else:
-        return {"결과": "위반 사항 없음", "AI 분석 결과": analysis_results["AI 분석 결과"]}
+    # 결과 데이터 구성
+    result_data = {
+        "broadcast_id": broadcast.방송ID,
+        "violations": violations,
+        "ai_analysis": analysis_results["AI 분석 결과"],
+        "processing_time": processing_time
+    }
+
+    # 결과를 IPFS에 저장
+    ipfs_hash = store_data_on_ipfs(result_data)
+    if ipfs_hash:
+        logging.info(f"계약 조건 확인 결과가 IPFS에 저장되었습니다. 해시: {ipfs_hash}")
+
+        # 위반 사항 반환
+        if violations:
+            return {"결과": violations, "AI 분석 결과": analysis_results["AI 분석 결과"], "IPFS 해시": ipfs_hash}
+        else:
+            return {"결과": "위반 사항 없음", "AI 분석 결과": analysis_results["AI 분석 결과"], "IPFS 해시": ipfs_hash}
+
+    # 방송 검사 결과를 IPFS에 저장하는 함수
+    def store_data_on_ipfs(data: dict):
+        """
+        계약서 검증 결과 데이터를 IPFS에 저장하고, 해시값을 반환.
+        """
+        try:
+            ipfs_api_url = "http://localhost:5001/api/v0/add"  # IPFS 로컬 노드 URL
+            files = {'file': ('result.json', str(data))}
+
+            response = requests.post(ipfs_api_url, files=files)
+            response.raise_for_status()
+
+            # IPFS 해시 반환
+            ipfs_hash = response.json()["Hash"]
+            logging.info(f"데이터가 IPFS에 저장되었습니다. 해시: {ipfs_hash}")
+            return ipfs_hash
+        except requests.exceptions.RequestException as e:
+            logging.error(f"IPFS 저장 실패: {e}")
+            return None
+
+    # AI 및 금지된 키워드 기반 방송 내용 분석 함수
+    def analyze_broadcast(broadcast_content: str, contract_conditions: dict, keywords: List[str]):
+        """
+        방송 내용을 분석하여 금지된 키워드나 스포일러 여부를 탐지.
+        AI 기반 분석과 금지된 키워드 탐지를 모두 처리.
+        """
+        # AI 기반 스포일러 탐지
+        prompt = f"""
+        방송 내용이 아래의 계약 조건을 위반했는지 분석해 주세요.
+        계약서 조건: {contract_conditions}
+        방송 내용: {broadcast_content}
+        금지된 키워드, 스포일러, 수익화 여부 등을 분석해 주세요.
+        """
+        logging.info("AI 기반으로 방송 내용을 분석 중입니다.")
+        ai_response = openai.Completion.create(
+            engine="gpt-4",
+            prompt=prompt,
+            max_tokens=500
+        )
+        ai_analysis = ai_response.choices[0].text
+
+        # 금지된 키워드 탐지
+        keyword_violations = [kw for kw in keywords if kw in broadcast_content]
+
+        return {"AI 분석 결과": ai_analysis, "금지된 키워드 위반": keyword_violations}
+
+    # 방송 길이 검사 함수
+    def check_broadcast_length(메타정보: dict, 계약서: Contract):
+        if 메타정보["영상길이"] < 계약서.최소_방송_길이:
+            logging.warning(f"방송 {메타정보['방송ID']}: 최소 방송 길이보다 짧음.")
+            return f"위반: 최소 방송 길이 {계약서.최소_방송_길이}분보다 짧음."
+        if 메타정보["영상길이"] > 계약서.최대_방송_길이:
+            logging.warning(f"방송 {메타정보['방송ID']}: 최대 방송 길이를 초과함.")
+            return f"위반: 최대 방송 길이 {계약서.최대_방송_길이}분보다 김."
+        return None
+
