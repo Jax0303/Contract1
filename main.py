@@ -101,7 +101,7 @@ def store_data_on_pds(data: dict):
     계약서 검증 결과 데이터를 PDS에 저장하고, 해시값 또는 저장된 데이터의 ID를 반환.
     """
     try:
-        pds_api_url = "http://localhost:8000/api/v1/store"  # 예시 PDS API URL
+        pds_api_url = "http://localhost:8000/api/v1/store"  # 예시 PDS 로컬API URL
         response = requests.post(pds_api_url, json=data)
         response.raise_for_status()
 
