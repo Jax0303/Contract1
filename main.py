@@ -20,7 +20,6 @@ app = FastAPI()
 # 계약서 저장을 위한 임시 저장소 (게임 ID와 PDS ID 매핑)
 contract_storage = {}
 
-
 # JWT 토큰 생성 함수
 def create_access_token(data: dict, expires_delta: timedelta = None):
     to_encode = data.copy()
@@ -32,10 +31,10 @@ def create_access_token(data: dict, expires_delta: timedelta = None):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-
 # 로그인 경로 - JWT 토큰 발급
 @app.post("/token")
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    # TODO: 실제 사용자 데이터베이스 인증 구현 필요
     if form_data.username != "user" or form_data.password != "password":
         raise HTTPException(
             status_code=401,
@@ -48,12 +47,10 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
-
 # 인증된 사용자만 접근 가능한 API
 @app.get("/users/me")
 async def read_users_me(username: str = Depends(oauth2_scheme)):
     return {"username": username}
-
 
 # DSL 계약서 모델 정의
 class DSLContract(BaseModel):
@@ -67,7 +64,6 @@ class DSLContract(BaseModel):
     수익화_허용: bool
     BGM_사용_금지: bool
     폭력적_콘텐츠_금지: bool
-
 
 # PDS에 데이터를 저장하는 함수
 def store_contract_on_pds(contract_data: dict):
@@ -83,8 +79,7 @@ def store_contract_on_pds(contract_data: dict):
         return pds_id
     except requests.RequestException as e:
         logging.error(f"PDS 저장 실패: {e}")
-        return None
-
+        raise HTTPException(status_code=500, detail="PDS 저장 실패: 데이터를 저장하지 못했습니다.")
 
 # PDS에서 데이터를 불러오는 함수
 def load_contract_from_pds(pds_id: str):
@@ -100,34 +95,30 @@ def load_contract_from_pds(pds_id: str):
         return contract_data
     except requests.RequestException as e:
         logging.error(f"PDS 불러오기 실패: {e}")
-        return None
-
+        raise HTTPException(status_code=500, detail="PDS 불러오기 실패: 데이터를 불러오지 못했습니다.")
 
 # 계약서를 저장하는 API
 @app.post("/contract/save")
 def save_contract(contract: DSLContract):
     pds_id = store_contract_on_pds(contract.dict())  # 계약서를 PDS에 저장
-
     if not pds_id:
         raise HTTPException(status_code=500, detail="PDS에 계약서 저장 실패")
 
     contract_storage[contract.game_id] = pds_id  # 게임 ID와 PDS ID 매핑
     return {"message": "Contract saved successfully", "pds_id": pds_id, "game_id": contract.game_id}
 
-
 # 게임 ID로 계약서를 불러오는 API
 @app.get("/contract/{game_id}")
 def get_contract(game_id: str):
     pds_id = contract_storage.get(game_id)
     if not pds_id:
-        raise HTTPException(status_code=404, detail="Contract not found for this game ID")
+        raise HTTPException(status_code=404, detail="해당 게임 ID에 대한 계약서를 찾을 수 없습니다.")
 
     contract = load_contract_from_pds(pds_id)
     if not contract:
         raise HTTPException(status_code=500, detail="PDS에서 계약서 불러오기 실패")
 
     return contract
-
 
 # 방송 데이터 모델 정의
 class BroadcastCheck(BaseModel):
@@ -136,15 +127,13 @@ class BroadcastCheck(BaseModel):
     게임ID: str = Field(..., alias="game_id")
     방송내용: str = Field(..., alias="content")
 
-
-# 방송 메타데이터 추출 함수
+# 방송 메타데이터 추출 함수 (실제 플랫폼 API 연동 필요)
 def extract_metadata(방송플랫폼, 방송ID):
-    # 예시로 고정된 메타데이터 반환
+    # TODO: 실제 방송 플랫폼 API 연동 필요 (예: YouTube, Twitch)
     return {
         "영상길이": 120,  # 방송 길이 (분 단위 예시)
         "방송제목": "테스트 방송 제목"
     }
-
 
 # 방송 길이 검사 함수
 def check_broadcast_length(메타정보: dict, 계약서: dict):
@@ -156,17 +145,14 @@ def check_broadcast_length(메타정보: dict, 계약서: dict):
         return f"위반: 최대 방송 길이 {계약서['최대_방송_길이']}분보다 김."
     return None
 
-
 # 금지된 키워드 검사 함수
 def check_text_for_keywords(text, keywords):
     return any(keyword in text for keyword in keywords)
 
-
 # 방송 내용 분석 함수
 def analyze_broadcast_content(방송플랫폼, 방송ID):
-    # 예시로 고정된 방송 내용을 반환
+    # TODO: 실제 방송 내용을 분석하기 위한 로직 추가 필요
     return "이 방송에서는 수익화와 스포일러가 포함되었습니다."
-
 
 # OBS 담당 회사에 위반 사항을 알리는 함수
 def notify_violation(game_id: str, violation_details: dict):
@@ -179,8 +165,7 @@ def notify_violation(game_id: str, violation_details: dict):
         response.raise_for_status()
         logging.info(f"Violation reported to OBS company for game {game_id}")
     except requests.RequestException as e:
-        logging.error(f"Failed to notify OBS company: {e}")
-
+        logging.error(f"OBS 회사에 위반 사항을 알리는 데 실패했습니다: {e}")
 
 # 계약서 조건을 체크하는 API
 @app.post("/check_contract")
@@ -191,7 +176,7 @@ def check_contract(broadcast: BroadcastCheck, token: str = Depends(oauth2_scheme
     # PDS에서 계약서 불러오기
     pds_id = contract_storage.get(broadcast.게임ID)
     if not pds_id:
-        raise HTTPException(status_code=404, detail="Contract not found")
+        raise HTTPException(status_code=404, detail="해당 게임 ID에 대한 계약서를 찾을 수 없습니다.")
 
     contract = load_contract_from_pds(pds_id)
     if not contract:
@@ -230,3 +215,4 @@ def check_contract(broadcast: BroadcastCheck, token: str = Depends(oauth2_scheme
         return {"message": "Contract violated", "violations": violations}
 
     return {"message": "No contract violations"}
+
