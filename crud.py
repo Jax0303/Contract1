@@ -1,15 +1,17 @@
 from sqlalchemy.orm import Session
 from models import User
+from schemas import UserCreate  #schemas에서 가져옴
+from passlib.context import CryptContext
 
-# 사용자 조회 함수
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
 def get_user_by_username(db: Session, username: str):
     return db.query(User).filter(User.username == username).first()
 
-# 사용자 생성 함수
-def create_user(db: Session, username: str, password: str):
-    user = User(username=username)
-    user.set_password(password)
-    db.add(user)
+def create_user(db: Session, user: UserCreate):
+    hashed_password = pwd_context.hash(user.password)
+    db_user = User(username=user.username, hashed_password=hashed_password)
+    db.add(db_user)
     db.commit()
-    db.refresh(user)
-    return user
+    db.refresh(db_user)
+    return db_user

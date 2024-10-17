@@ -1,14 +1,15 @@
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import declarative_base,sessionmaker
 
-# SQLite 데이터베이스 경로 설정
-SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"  # SQLite 파일로 저장
-engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
 
-# 세션 생성
+DATABASE_URL = "postgresql://myuser:mypassword@localhost/mydatabase"
+
+engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# 데이터베이스 세션 디펜던시로 사용되는 함수
+Base = declarative_base()
+
+# 데이터베이스 세션을 생성하는 함수
 def get_db():
     db = SessionLocal()
     try:

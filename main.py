@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, Form
+from fastapi import FastAPI, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from typing import List
 from sqlalchemy.orm import Session
@@ -6,11 +6,11 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 import logging
 from jose import JWTError, jwt
 import requests
-import sqlite3
-import crud,schemas
+import crud, schemas
 from datetime import timedelta, datetime
 from database import get_db
-from auth import get_current_user
+from auth import get_current_user, authenticate_user
+
 # JWT 설정
 SECRET_KEY = "your-secret-key"
 ALGORITHM = "HS256"
@@ -50,6 +50,7 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
         data={"sub": user.username}, expires_delta=timedelta(minutes=30)
     )
     return {"access_token": access_token, "token_type": "bearer"}
+
 # 인증된 사용자 정보 조회
 @app.get("/users/me", response_model=schemas.UserResponse)
 async def read_users_me(current_user: schemas.UserResponse = Depends(get_current_user)):
@@ -62,11 +63,6 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     if db_user:
         raise HTTPException(status_code=400, detail="이미 등록된 사용자 이름입니다.")
     return crud.create_user(db=db, username=user.username, password=user.password)
-
-# 인증된 사용자만 접근 가능한 API
-@app.get("/users/me")
-async def read_users_me(username: str = Depends(oauth2_scheme)):
-    return {"username": username}
 
 # DSL 계약서 모델 정의
 class DSLContract(BaseModel):
@@ -83,9 +79,6 @@ class DSLContract(BaseModel):
 
 # PDS에 데이터를 저장하는 함수
 def store_contract_on_pds(contract_data: dict):
-    """
-    계약서를 PDS에 저장하고, 저장된 데이터의 ID를 반환.
-    """
     try:
         pds_api_url = "http://localhost:8000/api/v1/store"  # PDS API URL 예시
         response = requests.post(pds_api_url, json=contract_data)
@@ -99,9 +92,6 @@ def store_contract_on_pds(contract_data: dict):
 
 # PDS에서 데이터를 불러오는 함수
 def load_contract_from_pds(pds_id: str):
-    """
-    PDS에서 계약서를 불러오는 함수.
-    """
     try:
         pds_api_url = f"http://localhost:8000/api/v1/store/{pds_id}"  # PDS API URL 예시
         response = requests.get(pds_api_url)
@@ -145,7 +135,6 @@ class BroadcastCheck(BaseModel):
 
 # 방송 메타데이터 추출 함수 (실제 플랫폼 API 연동 필요)
 def extract_metadata(방송플랫폼, 방송ID):
-    # TODO: 실제 방송 플랫폼 API 연동 필요 (예: YouTube, Twitch)
     return {
         "영상길이": 120,  # 방송 길이 (분 단위 예시)
         "방송제목": "테스트 방송 제목"
@@ -167,7 +156,6 @@ def check_text_for_keywords(text, keywords):
 
 # 방송 내용 분석 함수
 def analyze_broadcast_content(방송플랫폼, 방송ID):
-    # TODO: 실제 방송 내용을 분석하기 위한 로직 추가 필요
     return "이 방송에서는 수익화와 스포일러가 포함되었습니다."
 
 # OBS 담당 회사에 위반 사항을 알리는 함수

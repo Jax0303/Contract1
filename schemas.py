@@ -8,4 +8,4 @@ class UserResponse(BaseModel):
     username: str
 
     class Config:
-        from_attributes = True  # Pydantic V2에서 'orm_mode'는 'from_attributes'로 변경됨
+        from_attributes = True
