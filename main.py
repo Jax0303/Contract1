@@ -10,6 +10,8 @@ import crud, schemas
 from datetime import timedelta, datetime
 from database import get_db
 from auth import get_current_user, authenticate_user
+from models import Base
+from database import engine
 
 # JWT 설정
 SECRET_KEY = "your-secret-key"
@@ -21,19 +23,30 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 # FastAPI 앱 생성
 app = FastAPI()
 
+
+# 테이블을 생성하는 함수
+def create_tables():
+    Base.metadata.create_all(bind=engine)
+
+
+# FastAPI 앱 시작 시 테이블 생성
+@app.on_event("startup")
+def startup():
+    create_tables()
+
+
 # 계약서 저장을 위한 임시 저장소 (게임 ID와 PDS ID 매핑)
 contract_storage = {}
+
 
 # JWT 토큰 생성 함수
 def create_access_token(data: dict, expires_delta: timedelta = None):
     to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=15)
+    expire = datetime.utcnow() + expires_delta if expires_delta else datetime.utcnow() + timedelta(minutes=15)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
+
 
 # 로그인 경로 - JWT 토큰 발급
 @app.post("/token")
@@ -51,10 +64,12 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
+
 # 인증된 사용자 정보 조회
 @app.get("/users/me", response_model=schemas.UserResponse)
 async def read_users_me(current_user: schemas.UserResponse = Depends(get_current_user)):
     return current_user
+
 
 # 사용자 생성 API
 @app.post("/users/", response_model=schemas.UserResponse)
@@ -63,6 +78,7 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     if db_user:
         raise HTTPException(status_code=400, detail="이미 등록된 사용자 이름입니다.")
     return crud.create_user(db=db, username=user.username, password=user.password)
+
 
 # DSL 계약서 모델 정의
 class DSLContract(BaseModel):
@@ -77,6 +93,7 @@ class DSLContract(BaseModel):
     BGM_사용_금지: bool
     폭력적_콘텐츠_금지: bool
 
+
 # PDS에 데이터를 저장하는 함수
 def store_contract_on_pds(contract_data: dict):
     try:
@@ -89,6 +106,7 @@ def store_contract_on_pds(contract_data: dict):
     except requests.RequestException as e:
         logging.error(f"PDS 저장 실패: {e}")
         raise HTTPException(status_code=500, detail="PDS 저장 실패: 데이터를 저장하지 못했습니다.")
+
 
 # PDS에서 데이터를 불러오는 함수
 def load_contract_from_pds(pds_id: str):
@@ -103,6 +121,7 @@ def load_contract_from_pds(pds_id: str):
         logging.error(f"PDS 불러오기 실패: {e}")
         raise HTTPException(status_code=500, detail="PDS 불러오기 실패: 데이터를 불러오지 못했습니다.")
 
+
 # 계약서를 저장하는 API
 @app.post("/contract/save")
 def save_contract(contract: DSLContract):
@@ -112,6 +131,7 @@ def save_contract(contract: DSLContract):
 
     contract_storage[contract.game_id] = pds_id  # 게임 ID와 PDS ID 매핑
     return {"message": "Contract saved successfully", "pds_id": pds_id, "game_id": contract.game_id}
+
 
 # 게임 ID로 계약서를 불러오는 API
 @app.get("/contract/{game_id}")
@@ -126,6 +146,7 @@ def get_contract(game_id: str):
 
     return contract
 
+
 # 방송 데이터 모델 정의
 class BroadcastCheck(BaseModel):
     방송ID: str = Field(..., alias="broadcast_id")
@@ -133,12 +154,14 @@ class BroadcastCheck(BaseModel):
     게임ID: str = Field(..., alias="game_id")
     방송내용: str = Field(..., alias="content")
 
+
 # 방송 메타데이터 추출 함수 (실제 플랫폼 API 연동 필요)
 def extract_metadata(방송플랫폼, 방송ID):
     return {
         "영상길이": 120,  # 방송 길이 (분 단위 예시)
         "방송제목": "테스트 방송 제목"
     }
+
 
 # 방송 길이 검사 함수
 def check_broadcast_length(메타정보: dict, 계약서: dict):
@@ -150,13 +173,16 @@ def check_broadcast_length(메타정보: dict, 계약서: dict):
         return f"위반: 최대 방송 길이 {계약서['최대_방송_길이']}분보다 김."
     return None
 
+
 # 금지된 키워드 검사 함수
 def check_text_for_keywords(text, keywords):
     return any(keyword in text for keyword in keywords)
 
+
 # 방송 내용 분석 함수
 def analyze_broadcast_content(방송플랫폼, 방송ID):
     return "이 방송에서는 수익화와 스포일러가 포함되었습니다."
+
 
 # OBS 담당 회사에 위반 사항을 알리는 함수
 def notify_violation(game_id: str, violation_details: dict):
@@ -170,6 +196,7 @@ def notify_violation(game_id: str, violation_details: dict):
         logging.info(f"Violation reported to OBS company for game {game_id}")
     except requests.RequestException as e:
         logging.error(f"OBS 회사에 위반 사항을 알리는 데 실패했습니다: {e}")
+
 
 # 계약서 조건을 체크하는 API
 @app.post("/check_contract")
