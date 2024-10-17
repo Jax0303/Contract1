@@ -1,12 +1,16 @@
 from fastapi import FastAPI, Depends, HTTPException, Form
 from pydantic import BaseModel, Field
 from typing import List
+from sqlalchemy.orm import Session
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 import logging
 from jose import JWTError, jwt
 import requests
+import sqlite3
+import crud,schemas
 from datetime import timedelta, datetime
-
+from database import get_db
+from auth import get_current_user
 # JWT 설정
 SECRET_KEY = "your-secret-key"
 ALGORITHM = "HS256"
@@ -33,19 +37,31 @@ def create_access_token(data: dict, expires_delta: timedelta = None):
 
 # 로그인 경로 - JWT 토큰 발급
 @app.post("/token")
-async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
-    # TODO: 실제 사용자 데이터베이스 인증 구현 필요
-    if form_data.username != "user" or form_data.password != "password":
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    user = authenticate_user(db, form_data.username, form_data.password)
+    if not user:
         raise HTTPException(
-            status_code=401,
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail="사용자 이름 또는 비밀번호가 잘못되었습니다.",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    access_token_expires = timedelta(minutes=30)
+
     access_token = create_access_token(
-        data={"sub": form_data.username}, expires_delta=access_token_expires
+        data={"sub": user.username}, expires_delta=timedelta(minutes=30)
     )
     return {"access_token": access_token, "token_type": "bearer"}
+# 인증된 사용자 정보 조회
+@app.get("/users/me", response_model=schemas.UserResponse)
+async def read_users_me(current_user: schemas.UserResponse = Depends(get_current_user)):
+    return current_user
+
+# 사용자 생성 API
+@app.post("/users/", response_model=schemas.UserResponse)
+def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
+    db_user = crud.get_user_by_username(db, username=user.username)
+    if db_user:
+        raise HTTPException(status_code=400, detail="이미 등록된 사용자 이름입니다.")
+    return crud.create_user(db=db, username=user.username, password=user.password)
 
 # 인증된 사용자만 접근 가능한 API
 @app.get("/users/me")
@@ -215,4 +231,3 @@ def check_contract(broadcast: BroadcastCheck, token: str = Depends(oauth2_scheme
         return {"message": "Contract violated", "violations": violations}
 
     return {"message": "No contract violations"}
-
