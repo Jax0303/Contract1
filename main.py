@@ -21,26 +21,22 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
-
 # FastAPI 앱 생성
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 앱 시작 시 테이블을 생성
     create_tables()
     yield
-
+    # 앱 종료 시 실행할 내용 (필요시 추가 가능)
 
 app = FastAPI(lifespan=lifespan)
-
 
 # 테이블을 생성하는 함수
 def create_tables():
     Base.metadata.create_all(bind=engine)
 
-
 # 계약서 저장을 위한 임시 저장소 (게임 ID와 PDS ID 매핑)
 contract_storage = {}
-
 
 # JWT 토큰 생성 함수
 def create_access_token(data: dict, expires_delta: timedelta = None):
@@ -80,7 +76,7 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db_user = crud.get_user_by_username(db, username=user.username)
     if db_user:
         raise HTTPException(status_code=400, detail="이미 등록된 사용자 이름입니다.")
-    return crud.create_user(db=db, username=user.username, password=user.password)
+    return crud.create_user(db=db, user=user)
 
 
 # DSL 계약서 모델 정의
@@ -177,33 +173,35 @@ def check_broadcast_length(메타정보: dict, 계약서: dict):
     return None
 
 
-# 방송 제목 및 내용에서 금지된 키워드 검사 함수
-def check_violations(방송내용: str, 계약서: dict):
-    violations = []
+# 금지된 키워드 검사 함수
+def check_text_for_keywords(text, keywords):
+    return any(keyword in text for keyword in keywords)
 
-    # 금지된 키워드 검사
-    if check_text_for_keywords(방송내용, 계약서["금지_키워드"]):
-        violations.append("위반: 금지된 키워드 포함")
 
-    # 수익화 금지 여부 검사
-    if check_text_for_keywords(방송내용, ["수익화", "광고", "Advertisment"]):
-        violations.append("위반: 수익 창출 금지 위반")
+# 방송 내용 분석 함수
+def analyze_broadcast_content(방송플랫폼, 방송ID):
+    return "이 방송에서는 수익화와 스포일러가 포함되었습니다."
 
-    # 스포일러 송출 금지 여부 검사
-    if check_text_for_keywords(방송내용, ["스포일러", "결말", "Spoiler"]) and 계약서["스포일러_금지"]:
-        violations.append("위반: 스포일러 송출 금지")
 
-    # BGM 사용 여부 검사
-    if check_text_for_keywords(방송내용, ["BGM", "사운드트랙", "음악"]):
-        violations.append("위반: BGM 사용 금지")
-
-    return violations
+# OBS 담당 회사에 위반 사항을 알리는 함수
+def notify_violation(game_id: str, violation_details: dict):
+    obs_api_url = "https://obs-company-api.com/violation"  # 예시 URL
+    try:
+        response = requests.post(obs_api_url, json={
+            "game_id": game_id,
+            "violations": violation_details
+        })
+        response.raise_for_status()
+        logging.info(f"Violation reported to OBS company for game {game_id}")
+    except requests.RequestException as e:
+        logging.error(f"OBS 회사에 위반 사항을 알리는 데 실패했습니다: {e}")
 
 
 # 계약서 조건을 체크하는 API
 @app.post("/check_contract")
 def check_contract(broadcast: BroadcastCheck, token: str = Depends(oauth2_scheme)):
     logging.info(f"방송 {broadcast.방송ID}에 대한 계약 조건을 확인 중입니다.")
+    violations = []
 
     # PDS에서 계약서 불러오기
     pds_id = contract_storage.get(broadcast.게임ID)
@@ -219,11 +217,27 @@ def check_contract(broadcast: BroadcastCheck, token: str = Depends(oauth2_scheme
 
     # 2. 방송 길이 검사
     길이_위반 = check_broadcast_length(메타정보, contract)
-    violations = [길이_위반] if 길이_위반 else []
+    if 길이_위반:
+        violations.append(길이_위반)
 
-    # 3. 방송 제목 및 내용에 대한 위반사항 검사
+    # 3. 방송 제목에 금지된 키워드 검사
+    if check_text_for_keywords(메타정보["방송제목"], contract["금지_키워드"]):
+        violations.append("위반: 금지된 키워드가 제목에 포함됨.")
+
+    # 4. 방송 내용 분석
     방송내용 = analyze_broadcast_content(broadcast.방송플랫폼, broadcast.방송ID)
-    violations.extend(check_violations(방송내용, contract))
+
+    # 5. 수익화 금지 여부 검사
+    if check_text_for_keywords(방송내용, ["수익화", "광고", "Advertisment"]):
+        violations.append("위반: 수익 창출 금지 위반")
+
+    # 6. 스포일러 송출 금지 여부 검사
+    if check_text_for_keywords(방송내용, ["스포일러", "결말", "Spoiler"]) and contract["스포일러_금지"]:
+        violations.append("위반: 스포일러 송출 금지")
+
+    # 7. BGM 사용 여부 검사
+    if check_text_for_keywords(방송내용, ["BGM", "사운드트랙", "음악"]):
+        violations.append("위반: BGM 사용 금지")
 
     # 위반 사항이 있을 경우 OBS 회사에 알림
     if violations:

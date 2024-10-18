@@ -6,13 +6,18 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from database import get_db
 
+#해싱 설정
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 SECRET_KEY = "your-secret-key"
 ALGORITHM = "HS256"
 
-def verify_password(plain_password, hashed_password):
+# 비밀번호 해싱 함수
+def get_password_hash(password: str):
+    return pwd_context.hash(password)
+
+def verify_password(plain_password: str, hashed_password: str):
     return pwd_context.verify(plain_password, hashed_password)
 
 def authenticate_user(db: Session, username: str, password: str):
