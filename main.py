@@ -12,6 +12,7 @@ from database import get_db
 from auth import get_current_user, authenticate_user
 from models import Base
 from database import engine
+from contextlib import asynccontextmanager
 
 # JWT 설정
 SECRET_KEY = "your-secret-key"
@@ -21,23 +22,21 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 30
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 # FastAPI 앱 생성
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 앱 시작 시 테이블을 생성
+    create_tables()
+    yield
+    # 앱 종료 시 실행할 내용 (필요시 추가 가능)
 
+app = FastAPI(lifespan=lifespan)
 
 # 테이블을 생성하는 함수
 def create_tables():
     Base.metadata.create_all(bind=engine)
 
-
-# FastAPI 앱 시작 시 테이블 생성
-@app.on_event("startup")
-def startup():
-    create_tables()
-
-
 # 계약서 저장을 위한 임시 저장소 (게임 ID와 PDS ID 매핑)
 contract_storage = {}
-
 
 # JWT 토큰 생성 함수
 def create_access_token(data: dict, expires_delta: timedelta = None):
