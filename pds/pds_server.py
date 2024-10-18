@@ -12,7 +12,7 @@ class PDSData(BaseModel):
     violations: list
     ai_analysis: str
     processing_time: float
-
+##
 # 데이터를 로컬에 저장하는 API
 @app.post("/api/v1/store")
 async def store_data(data: PDSData):
