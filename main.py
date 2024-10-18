@@ -35,8 +35,8 @@ app = FastAPI(lifespan=lifespan)
 def create_tables():
     Base.metadata.create_all(bind=engine)
 
-# 계약서 저장을 위한 임시 저장소 (게임 ID와 PDS ID 매핑)
-contract_storage = {}
+# PDS 저장소
+pds_storage = {}
 
 # JWT 토큰 생성 함수
 def create_access_token(data: dict, expires_delta: timedelta = None):
@@ -104,9 +104,6 @@ class DSLContract(BaseModel):
 # 8자리 고유 PDS ID 생성 함수
 def generate_pds_id():
     return secrets.token_hex(4)  # 8자리 고유 ID 생성 (4 bytes = 8 hex digits)
-# 계약서 저장 및 불러오기 위한 로컬 메모리 저장소
-pds_storage = {}
-
 
 # 계약서 저장 API
 @app.post("/contract/save")
@@ -117,31 +114,20 @@ def save_contract(contract: DSLContract):
     # 계약서를 로컬 메모리(PDS 저장소)에 저장
     pds_storage[pds_id] = contract.dict()
 
-    # 게임 ID와 PDS ID를 매핑
-    contract_storage[contract.game_id] = pds_id
+    return {"message": "Contract saved successfully", "pds_id": pds_id}
 
-    return {"message": "Contract saved successfully", "pds_id": pds_id, "game_id": contract.game_id}
-
-
-# 계약서 불러오기 API (계약서 내용 함께 반환)
-@app.get("/contract/{game_id}")
-def get_contract(game_id: str):
-    # 게임 ID로 PDS ID 조회
-    pds_id = contract_storage.get(game_id)
-
-    if not pds_id:
-        raise HTTPException(status_code=404, detail="해당 게임 ID에 대한 계약서를 찾을 수 없습니다.")
-
+# 계약서 불러오기 API (PDS ID로 계약서 조회)
+@app.get("/contract/{pds_id}")
+def get_contract(pds_id: str):
     # PDS 저장소에서 계약서 불러오기
     contract = pds_storage.get(pds_id)
 
     if not contract:
-        raise HTTPException(status_code=500, detail="PDS에서 계약서를 불러오는 데 실패했습니다.")
+        raise HTTPException(status_code=404, detail="해당 PDS ID에 대한 계약서를 찾을 수 없습니다.")
 
     # 계약서 내용과 PDS ID 함께 반환
     return {
         "pds_id": pds_id,
-        "game_id": game_id,
         "contract_details": contract  # 계약서 전체 내용 반환
     }
 
@@ -196,12 +182,12 @@ def check_violations(contract, broadcast_data):
 # 계약서 조건을 체크하는 API
 @app.post("/check_contract")
 def check_contract(broadcast: BroadcastCheck, token: str = Depends(oauth2_scheme)):
-    pds_id = contract_storage.get(broadcast.게임ID)
-    if not pds_id:
-        raise HTTPException(status_code=404, detail="해당 게임 ID에 대한 계약서를 찾을 수 없습니다.")
+    pds_id = broadcast.게임ID  # PDS ID를 사용해 계약서 찾기
 
-    pds_api_url = f"http://localhost:8000/api/v1/store/{pds_id}"
-    contract = pds_request("GET", pds_api_url)
+    contract = pds_storage.get(pds_id)
+
+    if not contract:
+        raise HTTPException(status_code=404, detail="해당 PDS ID에 대한 계약서를 찾을 수 없습니다.")
 
     # 메타데이터 추출
     메타정보 = extract_metadata(broadcast.방송플랫폼, broadcast.방송ID)
@@ -210,21 +196,7 @@ def check_contract(broadcast: BroadcastCheck, token: str = Depends(oauth2_scheme
     violations = check_violations(contract, 메타정보)
 
     if violations:
-        # OBS 회사에 위반 사항 알림
-        notify_violation(broadcast.게임ID, violations)
+        # OBS 회사에 위반 사항 알림 (예시)
         return {"message": "Contract violated", "violations": violations}
 
     return {"message": "No contract violations"}
-
-# OBS 담당 회사에 위반 사항을 알리는 함수
-def notify_violation(game_id: str, violation_details: dict):
-    obs_api_url = "https://obs-company-api.com/violation"  # 예시 URL
-    try:
-        response = requests.post(obs_api_url, json={
-            "game_id": game_id,
-            "violations": violation_details
-        })
-        response.raise_for_status()
-        logging.info(f"Violation reported to OBS company for game {game_id}")
-    except requests.RequestException as e:
-        logging.error(f"OBS 회사에 위반 사항을 알리는 데 실패했습니다: {e}")
