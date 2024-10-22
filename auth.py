@@ -20,7 +20,7 @@ def verify_password(plain_password: str, hashed_password: str):
     return pwd_context.verify(plain_password, hashed_password)
 
 def authenticate_user(db: Session, username: str, password: str):
-    # 'User' 모델을 함수 내부에서 가져옵니다
+    # 'User' 모델을 함수 내부에서 가져옴
     from models import User
     user = db.query(User).filter(User.username == username).first()
     if not user:

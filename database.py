@@ -2,11 +2,11 @@ import os
 from sqlalchemy import create_engine, Table, Column, Integer, String, Boolean, MetaData
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-# 데이터베이스 URL 설정 (RDS PostgreSQL)
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:17171717@database-1.c3swiii0kpap.eu-north-1.rds.amazonaws.com:5432/mydatabase")
+# NHN 클라우드 PostgreSQL 연결 정보
+DATABASE_URL = "postgresql://GeorgeYu:17171717@2613658e-0419-46a7-8bcb-7c51aa595524.external.kr1.postgres.rds.nhncloudservice.com:15432/GeorgeYu"
 
 # SQLAlchemy 엔진 및 세션 설정
-engine = create_engine(DATABASE_URL)
+engine = create_engine("postgresql+psycopg2://postgres:17171717@2613658e-0419-46a7-8bcb-7c51aa595524.external.kr1.postgres.rds.nhncloudservice.com:15432/GeorgeYu?sslmode=disable")
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # 베이스 및 메타데이터 정의
