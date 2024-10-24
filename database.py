@@ -15,7 +15,6 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 metadata = MetaData()
 
-
 # 계약서 테이블 ORM 스타일로 정의
 class Contract(Base):
     __tablename__ = 'contracts'
@@ -28,10 +27,15 @@ class Contract(Base):
     max_broadcast_length = Column(Integer)
     isfree = Column(Boolean)
 
+# 게임 가이드라인 테이블 ORM 스타일로 정의
+class GameGuideline(Base):
+    __tablename__ = 'game_guidelines'
+
+    game_id = Column(String, primary_key=True, index=True)
+    guideline = Column(String, nullable=False)
 
 # 테이블 생성
 Base.metadata.create_all(bind=engine)
-
 
 # 데이터베이스 세션을 제공하는 함수
 def get_db():

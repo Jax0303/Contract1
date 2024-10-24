@@ -1,23 +1,23 @@
 from fastapi import FastAPI, Depends, HTTPException, Response, Request, status
-from pydantic import BaseModel, Field
-from typing import List
+from pydantic import BaseModel, Field, field_validator
+from typing import List, Optional
 from sqlalchemy.orm import Session
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from contextlib import asynccontextmanager
 from sqlalchemy import Table, Column, Integer, String, Boolean, inspect, MetaData
-from jose import JWTError, jwt
+from jose import jwt, JWTError
 from datetime import timedelta, datetime
-import uuid,os
+import uuid
 import crud, schemas
 from auth import get_current_user, authenticate_user
 from database import get_db, engine
 from dotenv import load_dotenv
 
 # JWT 설정
-SECRET_KEY = "your-secret-key"  # 나중에 NHN 클라우드에서 비밀키 관리
+SECRET_KEY = "your-secret-key"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 15  # Access 토큰 유효기간 15분
-REFRESH_TOKEN_EXPIRE_DAYS = 7  # Refresh 토큰 유효기간 7일
+ACCESS_TOKEN_EXPIRE_MINUTES = 15
+REFRESH_TOKEN_EXPIRE_DAYS = 7
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
@@ -72,6 +72,7 @@ def create_new_table():
         Column('min_broadcast_length', Integer),
         Column('max_broadcast_length', Integer),
         Column('isfree', Boolean),
+        Column('free_conditions', String),  # free_conditions 필드 추가
         Column('pds_id', String(8), unique=True, index=True),
     )
     metadata.create_all(bind=engine)
@@ -112,31 +113,45 @@ async def login_for_access_token(response: Response, form_data: OAuth2PasswordRe
 
     return {"message": "Login successful"}
 
-# Refresh 토큰을 사용한 Access 토큰 갱신 API
-@app.post("/token/refresh")
-async def refresh_token(response: Response, request: Request):
-    refresh_token = request.cookies.get("refresh_token")
-    if not refresh_token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token not found")
+# 무료 스트리밍 조건 스키마 정의
+class FreeConditions(BaseModel):
+    duration: Optional[str] = None  # 무료 스트리밍이 가능한 기간
+    viewer_limit: Optional[int] = None  # 특정 수 이상일 때 무료 허용
+    non_profit: Optional[bool] = None  # 비영리 목적으로만 사용 가능한지 여부
+    monetization_allowed: Optional[bool] = None  # 수익화 가능 여부
+    royalty_required: Optional[bool] = None  # 무료 스트리밍이지만 로열티 지급 필요 여부
 
-    try:
-        payload = jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
-        username = payload.get("sub")
-        if username is None:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
+# DSLContract 스키마
+class DSLContract(BaseModel):
+    streamer_id: str
+    game_id: str
+    min_broadcast_length: int
+    max_broadcast_length: int
+    #isfree: bool = False
+    free_conditions: Optional[FreeConditions] = None  # 무료 사용 조건 추가
+    banned_keywords: List[str]
+    no_spoilers: bool
+    monetization_allowed: bool
+    no_bgm_usage: bool
+    no_violent_content: bool
+    isfree: bool = False
 
-        # 새로운 Access 토큰 발급
-        new_access_token = create_access_token(data={"sub": username})
-        response.set_cookie(key="access_token", value=new_access_token, httponly=True)
-        return {"access_token": new_access_token}
+    # 유효성 검사
+    @field_validator('isfree')
+    def validate_free_conditions(cls, isfree, info):
+        free_conditions = info.data.get("free_conditions")  # 수정된 부분
+        if isfree and not free_conditions:
+            raise ValueError(str(info)+"무료 스트리밍을 허용할 경우, 무료 조건을 명시해야 합니다.")
+        return isfree
 
-    except JWTError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
 
 # 계약서 저장 API (테이블을 동적으로 생성하여 계약서 저장)
 @app.post("/contract/save")
-def save_contract(contract: schemas.DSLContract, db: Session = Depends(get_db)):
+def save_contract(contract: DSLContract, db: Session = Depends(get_db)):
     pds_id = generate_pds_id()
+
+    free_conditions = contract.free_conditions.json() if contract.isfree else None
+
     new_contract = Table(
         get_next_table_name(),
         metadata,
@@ -146,7 +161,9 @@ def save_contract(contract: schemas.DSLContract, db: Session = Depends(get_db)):
         Column('min_broadcast_length', Integer),
         Column('max_broadcast_length', Integer),
         Column('isfree', Boolean),
+        Column('free_conditions', String),  # free_conditions 저장 필드 추가
     )
+
     metadata.create_all(bind=engine)
     db.execute(new_contract.insert().values(
         pds_id=pds_id,
@@ -154,7 +171,8 @@ def save_contract(contract: schemas.DSLContract, db: Session = Depends(get_db)):
         game_id=contract.game_id,
         min_broadcast_length=contract.min_broadcast_length,
         max_broadcast_length=contract.max_broadcast_length,
-        isfree=contract.isfree
+        isfree=contract.isfree,
+        free_conditions=free_conditions  # free_conditions 저장
     ))
     db.commit()
 
@@ -169,26 +187,16 @@ def get_contract_by_pds_id(pds_id: str, db: Session = Depends(get_db)):
     if not result:
         raise HTTPException(status_code=404, detail="해당 PDS ID에 대한 계약서를 찾을 수 없습니다.")
 
+    free_conditions = result.free_conditions if result.isfree else None
+
     return {
         "streamer_id": result.streamer_id,
         "game_id": result.game_id,
         "min_broadcast_length": result.min_broadcast_length,
         "max_broadcast_length": result.max_broadcast_length,
-        "isfree": result.isfree
+        "isfree": result.isfree,
+        "free_conditions": free_conditions  # free_conditions 반환
     }
-
-# 인증된 사용자 정보 조회
-@app.get("/users/me", response_model=schemas.UserResponse)
-async def read_users_me(current_user: schemas.UserResponse = Depends(get_current_user)):
-    return current_user
-
-# 사용자 생성 API
-@app.post("/users/", response_model=schemas.UserResponse)
-def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    db_user = crud.get_user_by_username(db, username=user.username)
-    if db_user:
-        raise HTTPException(status_code=400, detail="이미 등록된 사용자 이름입니다.")
-    return crud.create_user(db=db, user=user)
 
 # 방송 데이터 모델 정의
 class BroadcastCheck(BaseModel):
