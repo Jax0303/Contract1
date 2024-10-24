@@ -127,7 +127,7 @@ class DSLContract(BaseModel):
     game_id: str
     min_broadcast_length: int
     max_broadcast_length: int
-    #isfree: bool = False
+    isfree: bool = False
     free_conditions: Optional[FreeConditions] = None  # 무료 사용 조건 추가
     banned_keywords: List[str]
     no_spoilers: bool
@@ -148,12 +148,15 @@ class DSLContract(BaseModel):
 # 계약서 저장 API (테이블을 동적으로 생성하여 계약서 저장)
 @app.post("/contract/save")
 def save_contract(contract: DSLContract, db: Session = Depends(get_db)):
+    # PDS ID 생성
     pds_id = generate_pds_id()
 
-    free_conditions = contract.free_conditions.json() if contract.isfree else None
+    # free_conditions 데이터를 JSON으로 저장
+    free_conditions = contract.free_conditions.dict() if contract.isfree and contract.free_conditions else None
 
-    new_contract = Table(
-        get_next_table_name(),
+    # 동적 테이블 생성
+    new_contract_table = Table(
+        get_next_table_name(),  # 새로운 테이블 이름 생성
         metadata,
         Column('pds_id', String(8), unique=True, index=True),
         Column('streamer_id', String),
@@ -161,22 +164,38 @@ def save_contract(contract: DSLContract, db: Session = Depends(get_db)):
         Column('min_broadcast_length', Integer),
         Column('max_broadcast_length', Integer),
         Column('isfree', Boolean),
-        Column('free_conditions', String),  # free_conditions 저장 필드 추가
+        Column('free_conditions', String),  # free_conditions를 JSON 문자열로 저장
+        Column('banned_keywords', String),  # 금지된 키워드를 문자열로 저장
+        Column('no_spoilers', Boolean),
+        Column('monetization_allowed', Boolean),
+        Column('no_bgm_usage', Boolean),
+        Column('no_violent_content', Boolean)
     )
 
+    # 테이블 생성
     metadata.create_all(bind=engine)
-    db.execute(new_contract.insert().values(
+
+    # DSLContract 데이터를 동적 테이블에 삽입
+    db.execute(new_contract_table.insert().values(
         pds_id=pds_id,
         streamer_id=contract.streamer_id,
         game_id=contract.game_id,
         min_broadcast_length=contract.min_broadcast_length,
         max_broadcast_length=contract.max_broadcast_length,
         isfree=contract.isfree,
-        free_conditions=free_conditions  # free_conditions 저장
+        free_conditions=str(free_conditions) if free_conditions else None,  # JSON으로 변환된 무료 조건을 문자열로 저장
+        banned_keywords=str(contract.banned_keywords),  # 금지된 키워드 리스트를 문자열로 저장
+        no_spoilers=contract.no_spoilers,
+        monetization_allowed=contract.monetization_allowed,
+        no_bgm_usage=contract.no_bgm_usage,
+        no_violent_content=contract.no_violent_content
     ))
+
+    # 커밋하여 변경 사항 적용
     db.commit()
 
     return {"message": "Contract saved successfully", "pds_id": pds_id}
+
 
 # PDS ID로 계약서 조회 API
 @app.get("/contract/{pds_id}")
