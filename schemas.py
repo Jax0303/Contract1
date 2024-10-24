@@ -11,9 +11,12 @@ class UserCreate(BaseModel):
     email: EmailStr  # 이메일 필드 추가
 
 class UserResponse(BaseModel):
+    id: int
     username: str
     email: EmailStr  # 이메일 검증
 
+    class Config:
+        from_attributes = True
 
 class DSLContract(BaseModel):
     streamer_id: str

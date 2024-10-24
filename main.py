@@ -8,10 +8,11 @@ from sqlalchemy import Table, Column, Integer, String, Boolean, inspect, MetaDat
 from jose import jwt, JWTError
 from datetime import timedelta, datetime
 import uuid
-import crud, schemas
+from crud import create_user
 from auth import get_current_user, authenticate_user
 from database import get_db, engine
-from dotenv import load_dotenv
+from schemas import UserResponse, UserCreate
+from models import Base
 
 # JWT 설정
 SECRET_KEY = "your-secret-key"
@@ -23,6 +24,9 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 # 메타데이터 설정
 metadata = MetaData()
+
+# 테이블 생성
+Base.metadata.create_all(bind=engine)
 
 # 생성된 테이블들을 추적할 리스트
 created_tables = []
@@ -92,6 +96,18 @@ def create_refresh_token(data: dict):
     expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+# 새로운 사용자 등록 API
+@app.post("/users/", response_model=UserResponse)
+def register_user(user: UserCreate, db: Session = Depends(get_db)):
+    db_user = create_user(db, user)
+    return db_user
+
+# 모든 사용자 정보 조회 API
+@app.get("/users/", response_model=list[UserResponse])
+def read_users(db: Session = Depends(get_db)):
+    users = get_users(db)
+    return users
 
 # 로그인 경로 - JWT Access 및 Refresh 토큰 발급, 쿠키에 저장
 @app.post("/token")

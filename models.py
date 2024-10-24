@@ -3,6 +3,15 @@ from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
 
+#고정된 사용자 테이블 정의
+class User(Base):
+    __tablename__ = 'users'
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    email = Column(String, unique=True, index=True, nullable=False)
+
 # 계약서 테이블 ORM 모델 정의
 class Contract(Base):
     __tablename__ = "contracts"

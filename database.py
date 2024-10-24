@@ -39,10 +39,7 @@ Base.metadata.create_all(bind=engine)
 
 # 데이터베이스 세션을 제공하는 함수
 def get_db():
-    """
-    데이터베이스 세션을 제공하는 함수
-    FastAPI 의존성 주입을 위해 사용
-    """
+    """데이터베이스 세션을 제공하는 함수.FastAPI 의존성 주입을 위해 사용"""
     db = SessionLocal()
     try:
         yield db

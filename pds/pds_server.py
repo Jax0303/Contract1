@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import uuid
-import os
+import os, json
 
 # FastAPI 앱 생성
 app = FastAPI()
@@ -28,7 +28,7 @@ async def store_data(data: PDSData):
         # 데이터를 JSON 파일로 저장
         file_path = os.path.join(save_dir, f"{data_id}.json")
         with open(file_path, "w") as f:
-            f.write(data.json())
+            f.write(json.dumps(data.dict(), indent=4))
 
         return {"id": data_id}
 
