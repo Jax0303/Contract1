@@ -1,23 +1,26 @@
-from pydantic import BaseModel,EmailStr,field_validator
+from pydantic import BaseModel, EmailStr, Field
 from typing import List
-
-# 사용자 관련 스키마 정의
-from pydantic import EmailStr
 
 # 사용자 관련 스키마 정의
 class UserCreate(BaseModel):
     username: str
     password: str
-    email: EmailStr  # 이메일 필드 추가
+    email: EmailStr
 
 class UserResponse(BaseModel):
     id: int
     username: str
-    email: EmailStr  # 이메일 검증
+    email: EmailStr
 
     class Config:
-        from_attributes = True
+        from_attributes = True  # orm_mode에서 from_attributes로 변경
 
+# 비밀번호 재설정 스키마
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+# 계약 관련 스키마
 class DSLContract(BaseModel):
     streamer_id: str
     game_id: str
@@ -30,9 +33,9 @@ class DSLContract(BaseModel):
     no_bgm_usage: bool
     no_violent_content: bool
 
-    # Pydantic V2 스타일의 유효성 검증
-    @field_validator('min_broadcast_length')
-    def check_min_length(cls, value):
-        if value < 0:
-            raise ValueError('Minimum broadcast length cannot be negative')
-        return value
+# 방송 메타데이터 검사 관련 스키마
+class BroadcastCheck(BaseModel):
+    broadcast_id: str = Field(..., alias="방송ID")
+    broadcast_platform: str = Field(..., alias="방송플랫폼")
+    game_id: str = Field(..., alias="게임ID")
+    content: str = Field(..., alias="방송내용")
