@@ -2,6 +2,8 @@
 from fastapi import HTTPException, status
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
 
+#일단 로직만 작성 , 중요한거 아님
+
 # 발신자(자사 이메일) 설정
 conf = ConnectionConfig(
     MAIL_USERNAME="company_email@example.com",  # 자사 이메일 계정, 일단은 더미 로두고 나중에 IMAP랑 SMTP 부분 해야할듯한
