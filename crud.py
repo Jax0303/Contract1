@@ -1,39 +1,41 @@
 #crud.py
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import NoResultFound
-from models import User, Contract, Guideline
+from models import User, Contract, customcondition
 from schemas import UserCreate, ContractStatusUpdate
 from fastapi import HTTPException, status
+import uuid
 
 def get_user_by_username(db: Session, username: str):
     return db.query(User).filter(User.username == username).first()
 
 def create_user(db: Session, user: UserCreate):
     from auth import get_password_hash  # get_password_hash 임포트, 함수 내부로 이동
-    # 중복 사용자 확인
-    existing_user = db.query(User).filter(User.username == user.username).first()
-    if existing_user:
+    # 중복 사용자 ID 확인
+    existing_user_id = db.query(User).filter(User.id == user.id).first()
+    if existing_user_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="중복된 사용자명입니다."
+            detail="중복된 사용자 ID가 존재합니다."
         )
-    # 비밀번호 해싱
+
+    # 비밀번호 해싱, id는 중복 가능
     hashed_password = get_password_hash(user.password)
-    db_user = User(username=user.username, hashed_password=hashed_password, email=user.email)
+    db_user = User(id=unique_id, username=user.username, hashed_password=hashed_password, email=user.email)
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
     return db_user
 
-def create_guideline(db: Session, content: str):
-    guideline = Guideline(content=content)
-    db.add(guideline)
+def create_customcondition(db: Session, content: str):
+    customcondition = customcondition(content=content)
+    db.add(customcondition)
     db.commit()
-    db.refresh(guideline)
-    return guideline
+    db.refresh(customcondition)
+    return customcondition
 
-def get_guidelines(db: Session):
-    return db.query(Guideline).all()
+def get_customcondition(db: Session):
+    return db.query(customcondition).all()
 
 def save_contract(contract, db: Session):
     db_contract = Contract(

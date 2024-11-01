@@ -25,7 +25,7 @@ class Contract(Base):
     status = Column(String, default="in_progress")  # 계약 상태
     last_updated = Column(DateTime, default=func.now(), onupdate=func.now())  # 마지막 업데이트 날짜
 
-class Guideline(Base):
-    __tablename__ = 'guidelines'
+class customcondition(Base):
+    __tablename__ = 'customcondition'
     id = Column(Integer, primary_key=True, index=True)
-    content = Column(String, nullable=False)  # 가이드라인 내용 필드
+    content = Column(String, nullable=False)  # 커스텀조건 내용 필드

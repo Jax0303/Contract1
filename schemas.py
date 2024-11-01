@@ -5,6 +5,7 @@ from datetime import datetime
 
 # 사용자 관련 스키마 정의
 class UserCreate(BaseModel):
+    id : int
     username: str
     password: str
     email: EmailStr
@@ -23,7 +24,7 @@ class ResetPasswordRequest(BaseModel):
     new_password: str
 
 # 맞춤형 조건을 정의하는 스키마
-class CustomConditions(BaseModel):
+class customcondition(BaseModel):
     banned_keywords: List[str]
     no_spoilers: bool
     monetization_allowed: bool
@@ -38,7 +39,7 @@ class DSLContract(BaseModel):
     min_broadcast_length: int
     max_broadcast_length: int
     isfree: bool  # 수익화 여부를 나타내는 필드
-    custom_conditions: Optional[CustomConditions] = None  # 맞춤형 조건을 포함하는 필드, isfree 참일때만
+    custom_conditions: Optional[customcondition] = None  # 맞춤형 조건을 포함하는 필드, isfree 참일때만
     streamer_signed: bool = False  # 스트리머 서명 여부
     developer_signed: bool = False  # 개발사 서명 여부
     status: str = "in_progress"  # 계약 상태
@@ -55,7 +56,7 @@ class BroadcastCheck(BaseModel):
 class ContractStatusUpdate(BaseModel):
     status: str  # 계약 상태를 나타내는 필드
     isfree: bool
-    custom_conditions: Optional[CustomConditions] = None
+    custom_conditions: Optional[customcondition] = None
 
     class Config:
         from_attributes = True

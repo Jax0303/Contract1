@@ -1,12 +1,10 @@
-#auth.py
 from datetime import datetime, timedelta
 from jose import jwt, JWTError
 from passlib.context import CryptContext
-from database import get_db
-from fastapi import Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from models import User  # User 모델 임포트
 
-SECRET_KEY = "985c4ec8c68448813ee2b5837904d01a10cc4644337f0f31a88620d3fab471b4" #추후에 환경변수로 관리
+SECRET_KEY = "985c4ec8c68448813ee2b5837904d01a10cc4644337f0f31a88620d3fab471b4"  # 추후 환경변수로 관리
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 15
 REFRESH_TOKEN_EXPIRE_DAYS = 7
@@ -18,9 +16,8 @@ def get_password_hash(password: str):
 def verify_password(plain_password: str, hashed_password: str):
     return pwd_context.verify(plain_password, hashed_password)
 
-def authenticate_user(db: Session, username: str, password: str):
-    from crud import get_user_by_username
-    user = get_user_by_username(db, username)
+def authenticate_user(db: Session, user_id: int, password: str):
+    user = db.query(User).filter(User.id == user_id).first()  # 사용자 ID로 조회
     if user and verify_password(password, user.hashed_password):
         return user
     return None
