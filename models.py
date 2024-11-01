@@ -22,7 +22,7 @@ class Contract(Base):
     custom_conditions = Column(JSON, nullable=True)  # 맞춤형 조건을 포함하는 JSON 필드
     streamer_signed = Column(Boolean, default=False)  # 스트리머 서명 여부
     developer_signed = Column(Boolean, default=False)  # 개발사 서명 여부
-    status = Column(String, default="in_progress")  # 계약 상태
+    status = Column(String, default="계약 진행 중")  # 계약 상태
     last_updated = Column(DateTime, default=func.now(), onupdate=func.now())  # 마지막 업데이트 날짜
 
 class customcondition(Base):

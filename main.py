@@ -7,6 +7,7 @@ from crud import (
     create_user, get_users, save_contract, check_contract,
     create_customcondition, get_customcondition, get_contract_by_game_id, update_contract_status
 )
+from models import Contract
 from email_utils import send_reset_email
 from database import get_db
 from schemas import UserCreate, UserResponse, DSLContract, ResetPasswordRequest, BroadcastCheck, ContractStatusUpdate
@@ -55,9 +56,9 @@ async def reset_password(request: ResetPasswordRequest):
 def save_contract_api(contract: DSLContract, db: Session = Depends(get_db)):
     # Streamer와 Developer 서명 상태에 따라 계약 상태 결정
     if contract.streamer_signed and contract.developer_signed:
-        contract.status = "completed"  # 양측 모두 서명 시 '계약 완료'
+        contract.status = "계약 완료"  # 양측 모두 서명 시 '계약 완료'
     else:
-        contract.status = "in_progress"  # 한쪽만 서명 시 '계약 진행 중'
+        contract.status = "계약 진행 중"  # 한쪽만 서명 시 '계약 진행 중'
 
     return save_contract(contract, db)
 
@@ -83,4 +84,13 @@ def update_contract_status_api(contract_id: str, status: ContractStatusUpdate, d
 
 @app.get("/contracts/")
 def get_contracts_by_status(status: str = None, db: Session = Depends(get_db)):
-    return get_contracts_by_filter(db, status=status)
+    # 상태별 필터링 적용
+    if status:
+        contracts = db.query(Contract).filter(Contract.status == status).all()
+    else:
+        contracts = db.query(Contract).all()  # 상태가 없으면 전체 계약서 반환
+    return contracts
+
+@app.get("/contracts/status_list")
+def get_contract_status_list():
+    return ["계약 진행 중", "계약 완료"]

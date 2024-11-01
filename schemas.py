@@ -42,7 +42,7 @@ class DSLContract(BaseModel):
     custom_conditions: Optional[customcondition] = None  # 맞춤형 조건을 포함하는 필드, isfree 참일때만
     streamer_signed: bool = False  # 스트리머 서명 여부
     developer_signed: bool = False  # 개발사 서명 여부
-    status: str = "in_progress"  # 계약 상태
+    status: str = "계약 진행 중"  # 계약 상태
     last_updated: datetime = None  # 마지막 업데이트 날짜
 
 # 방송 메타데이터 검사 관련 스키마
